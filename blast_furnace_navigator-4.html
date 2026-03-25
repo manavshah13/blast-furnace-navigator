@@ -1,0 +1,1050 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Blast Furnace — Zone Navigator</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap');
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{width:100%;height:100%;overflow:hidden;background:#f0ede8;}
+canvas{display:block;position:fixed;inset:0;}
+#hud{position:fixed;inset:0;pointer-events:none;z-index:20;font-family:'Share Tech Mono',monospace;}
+
+#title{position:absolute;top:22px;left:28px;}
+#title .kicker{font-size:9px;letter-spacing:.3em;color:#999;text-transform:uppercase;margin-bottom:4px;}
+#title h1{font-family:'Bebas Neue',sans-serif;font-size:34px;letter-spacing:.08em;color:#111;line-height:1;}
+#title .sub{font-size:9px;letter-spacing:.2em;color:#bbb;text-transform:uppercase;margin-top:4px;}
+
+/* depth sidebar */
+#depth-bar{position:absolute;left:28px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;align-items:center;}
+.dpip{width:12px;height:12px;border-radius:50%;border:2px solid #ccc;background:#fff;
+  margin:7px 0;cursor:pointer;pointer-events:all;transition:all .3s;position:relative;}
+.dpip.active{border-color:var(--pc);background:var(--pc);box-shadow:0 0 14px var(--pc);}
+.dpip::after{content:attr(data-lbl);position:absolute;left:20px;top:50%;transform:translateY(-50%);
+  font-size:8px;letter-spacing:.15em;color:#bbb;white-space:nowrap;text-transform:uppercase;}
+.dpip.active::after{color:#333;}
+.dline{width:2px;height:20px;background:#e0e0e0;}
+
+/* info panel */
+#panel{position:absolute;right:26px;top:50%;transform:translateY(-50%) translateX(24px);
+  width:300px;background:rgba(255,255,255,.96);backdrop-filter:blur(16px);
+  border:1.5px solid #ddd;border-radius:16px;padding:22px 20px;opacity:0;
+  transition:opacity .4s,transform .4s;pointer-events:none;
+  box-shadow:0 8px 40px rgba(0,0,0,.12);}
+#panel.vis{opacity:1;transform:translateY(-50%) translateX(0);}
+#p-badge{display:inline-block;border-radius:20px;padding:3px 13px;font-size:10px;
+  font-weight:700;letter-spacing:.14em;margin-bottom:10px;color:#fff;}
+#p-name{font-family:'Bebas Neue',sans-serif;font-size:26px;letter-spacing:.06em;line-height:1;margin-bottom:2px;color:#111;}
+#p-sub{font-size:9px;letter-spacing:.2em;color:#999;text-transform:uppercase;margin-bottom:12px;}
+.pdiv{height:1px;background:#eee;margin-bottom:12px;}
+#p-desc{font-family:'Rajdhani',sans-serif;font-size:13px;line-height:1.7;color:#444;margin-bottom:14px;}
+#p-eq{background:#f8f8f8;border-left:3px solid #ccc;border-radius:0 8px 8px 0;
+  padding:10px 14px;font-size:12px;letter-spacing:.04em;white-space:pre-line;color:#222;margin-bottom:10px;}
+#p-depth{font-size:9px;letter-spacing:.18em;color:#bbb;text-transform:uppercase;}
+
+/* mechanism overlay — fullscreen backdrop shown when zone active */
+#mechanism-bg{
+  position:fixed;inset:0;z-index:5;pointer-events:none;
+  opacity:0;transition:opacity .6s ease;
+}
+#mechanism-bg.vis{ opacity:1; }
+
+/* gauge */
+#gauge{position:absolute;top:22px;right:26px;display:flex;flex-direction:column;align-items:flex-end;gap:5px;}
+#gauge .gl{font-size:9px;letter-spacing:.2em;color:#bbb;text-transform:uppercase;}
+#gauge .gv{font-family:'Bebas Neue',sans-serif;font-size:26px;letter-spacing:.06em;color:#222;}
+#gauge .gbw{width:150px;height:5px;background:#e8e8e8;border-radius:4px;overflow:hidden;}
+#gauge .gb{height:100%;border-radius:4px;background:linear-gradient(90deg,#ff8800,#ff2200);
+  transition:width .6s cubic-bezier(.4,0,.2,1);}
+
+/* nav pills */
+#nav{position:absolute;bottom:28px;left:50%;transform:translateX(-50%);display:flex;gap:8px;pointer-events:all;}
+.npill{border-radius:20px;padding:5px 15px;font-size:9px;letter-spacing:.13em;text-transform:uppercase;
+  cursor:pointer;border:1.5px solid #ccc;background:#fff;color:#888;
+  font-family:'Share Tech Mono',monospace;transition:all .3s;user-select:none;
+  box-shadow:0 2px 8px rgba(0,0,0,.07);}
+.npill:hover{border-color:#888;color:#333;}
+.npill.active{color:#fff;border-color:transparent;box-shadow:0 4px 16px rgba(0,0,0,.2);}
+
+#hint{position:absolute;bottom:66px;left:50%;transform:translateX(-50%);
+  font-size:9px;letter-spacing:.2em;color:#ccc;text-transform:uppercase;animation:blink 3s ease-in-out infinite;}
+@keyframes blink{0%,100%{opacity:.4}50%{opacity:1}}
+
+#reset{position:absolute;top:22px;right:26px;pointer-events:all;
+  background:#fff;border:1.5px solid #ddd;border-radius:8px;
+  padding:7px 18px;color:#666;font-size:9px;letter-spacing:.18em;
+  text-transform:uppercase;cursor:pointer;font-family:'Share Tech Mono',monospace;
+  transition:all .25s;display:none;box-shadow:0 2px 8px rgba(0,0,0,.08);}
+#reset:hover{background:#f5f5f5;color:#111;border-color:#aaa;}
+
+.llbl{position:absolute;font-family:'Share Tech Mono',monospace;font-size:9px;
+  letter-spacing:.16em;text-transform:uppercase;transform:translate(-50%,-50%);
+  pointer-events:none;white-space:nowrap;font-weight:700;}
+
+/* ── Team Credits ── */
+#team-panel{
+  position:absolute;bottom:28px;right:26px;
+  background:rgba(255,255,255,.92);
+  backdrop-filter:blur(14px);
+  border:1.5px solid #e8e8e8;
+  border-radius:14px;
+  padding:14px 18px;
+  box-shadow:0 4px 24px rgba(0,0,0,.09);
+  min-width:210px;
+}
+#team-panel .tp-header{
+  font-size:7.5px;letter-spacing:.28em;color:#bbb;text-transform:uppercase;
+  margin-bottom:10px;display:flex;align-items:center;gap:7px;
+}
+#team-panel .tp-header::before,
+#team-panel .tp-header::after{
+  content:'';flex:1;height:1px;background:#eee;
+}
+#team-panel .tp-subject{
+  font-family:'Bebas Neue',sans-serif;font-size:13px;letter-spacing:.1em;
+  color:#555;text-align:center;margin-bottom:10px;
+}
+#team-panel .tp-grid{
+  display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;
+}
+#team-panel .tp-member{
+  font-family:'Share Tech Mono',monospace;font-size:8.5px;
+  letter-spacing:.06em;color:#444;text-transform:uppercase;
+  padding:3px 0;border-bottom:1px solid #f2f2f2;
+  display:flex;align-items:center;gap:5px;
+  white-space:nowrap;
+}
+#team-panel .tp-member:nth-last-child(-n+2){border-bottom:none;}
+#team-panel .tp-member .dot{
+  width:5px;height:5px;border-radius:50%;flex-shrink:0;
+  background:var(--dc,#ccc);
+}
+
+/* Mechanism canvas (2D overlay drawn per zone) */
+#mech-canvas{position:fixed;left:0;top:0;width:100%;height:100%;
+  pointer-events:none;z-index:6;opacity:0;transition:opacity .5s ease;}
+#mech-canvas.vis{opacity:1;}
+
+/* Mechanism label strip */
+#mech-label{position:fixed;bottom:90px;left:50%;transform:translateX(-50%);
+  font-family:'Bebas Neue',sans-serif;font-size:28px;letter-spacing:.12em;
+  pointer-events:none;z-index:8;opacity:0;transition:opacity .5s;
+  text-shadow:0 2px 12px rgba(0,0,0,.15);}
+#mech-label.vis{opacity:1;}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<!-- 2D mechanism overlay canvas -->
+<canvas id="mech-canvas"></canvas>
+<div id="mech-label"></div>
+
+<div id="hud">
+  <div id="title">
+    <div class="kicker">Industrial Cross-Section Navigator</div>
+    <h1>Blast Furnace</h1>
+    <div class="sub">Pyrometallurgy Zone Explorer</div>
+  </div>
+  <div id="depth-bar"></div>
+  <div id="panel">
+    <div id="p-badge"></div>
+    <div id="p-name"></div>
+    <div id="p-sub"></div>
+    <div class="pdiv"></div>
+    <div id="p-desc"></div>
+    <div id="p-eq"></div>
+    <div id="p-depth"></div>
+  </div>
+  <div id="gauge">
+    <div class="gl">Thermal Index</div>
+    <div class="gv" id="gval">—</div>
+    <div class="gbw"><div class="gb" id="gbar" style="width:0%"></div></div>
+  </div>
+  <button id="reset">← Overview</button>
+  <div id="nav"></div>
+  <div id="hint">Click any glowing zone to explore &nbsp;·&nbsp; Drag to orbit</div>
+
+  <!-- Team Credits -->
+  <div id="team-panel">
+    <div class="tp-header">Team</div>
+    <div class="tp-subject">Chemistry Flip-Classroom Activity</div>
+    <div class="tp-grid">
+      <div class="tp-member"><span class="dot" style="--dc:#4488cc"></span>Shah Manav Amit</div>
+      <div class="tp-member"><span class="dot" style="--dc:#ff9900"></span>Avishkar Dhamal</div>
+      <div class="tp-member"><span class="dot" style="--dc:#ff4400"></span>Jinchandra Jain</div>
+      <div class="tp-member"><span class="dot" style="--dc:#ff1100"></span>Jainam Gala</div>
+      <div class="tp-member"><span class="dot" style="--dc:#ffaa00"></span>Bhargav Joshi</div>
+      <div class="tp-member"><span class="dot" style="--dc:#4488cc"></span>Ayush Mhatre</div>
+      <div class="tp-member"><span class="dot" style="--dc:#ff9900"></span>Kavya Hindocha</div>
+      <div class="tp-member"><span class="dot" style="--dc:#ff4400"></span>Hardik Choudhary</div>
+    </div>
+  </div>
+</div>
+
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ══════════════════════════════════════════
+// LAYER DATA
+// ══════════════════════════════════════════
+const LAYERS = [
+  { id:0, name:'Charging Zone',   sub:'Raw Material Feed',
+    temp:'200°C',           tempVal:200,  depth:'0 m — Throat (Top)',
+    y:9.2,
+    desc:'Alternating batches of iron ore, coke and limestone are loaded from the top. The burden descends slowly as material is consumed below.',
+    eq:'Fe₂O₃ + Coke + CaCO₃  →  Charged Burden',
+    hex:'#4488cc', glow:0x4488cc, part:0x88bbff,
+    badge:'linear-gradient(90deg,#1a4488,#4488cc)', pg:'#4488cc', labelCol:'#1a4488',
+    mechColor:'rgba(68,136,204', mechBg:'rgba(68,136,204,0.06)' },
+
+  { id:1, name:'Thermal Reserve', sub:'Indirect Reduction',
+    temp:'900°C – 1000°C',  tempVal:950,  depth:'4 m — Upper Shaft',
+    y:4.5,
+    desc:'CO gas rises and progressively reduces iron oxides from Fe₂O₃ through Fe₃O₄ to FeO. Temperature rises sharply downward.',
+    eq:'Fe₂O₃ + CO → Fe₃O₄ + CO₂\nFe₃O₄ + CO → 3FeO + CO₂',
+    hex:'#ff9900', glow:0xff9900, part:0xffcc55,
+    badge:'linear-gradient(90deg,#cc5500,#ff9900)', pg:'#ff9900', labelCol:'#cc5500',
+    mechColor:'rgba(255,153,0', mechBg:'rgba(255,153,0,0.06)' },
+
+  { id:2, name:'Cohesive Zone',   sub:'Softening & Melting',
+    temp:'1100°C – 1300°C', tempVal:1200, depth:'8 m — Bosh',
+    y:0,
+    desc:'The burden softens and melts. Iron drips through coke layers into the hearth. Slag forms from gangue and limestone flux.',
+    eq:'FeO + CO → Fe(l) + CO₂\nCaO + SiO₂ → CaSiO₃',
+    hex:'#ff4400', glow:0xff4400, part:0xffaa44,
+    badge:'linear-gradient(90deg,#aa1100,#ff4400)', pg:'#ff4400', labelCol:'#aa1100',
+    mechColor:'rgba(255,68,0', mechBg:'rgba(255,68,0,0.06)' },
+
+  { id:3, name:'Combustion Zone', sub:'Raceway — Tuyere Level',
+    temp:'1800°C – 2100°C', tempVal:2000, depth:'13 m — Raceway',
+    y:-4.5,
+    desc:'Blast air through tuyeres burns coke in raceways, generating CO gas and extreme heat that drives the entire furnace thermodynamics.',
+    eq:'2C + O₂ → 2CO\nC + O₂ → CO₂ → 2CO',
+    hex:'#ff1100', glow:0xff1100, part:0xffee55,
+    badge:'linear-gradient(90deg,#aa0000,#ff3300)', pg:'#ff1100', labelCol:'#aa0000',
+    mechColor:'rgba(255,17,0', mechBg:'rgba(255,17,0,0.06)' },
+
+  { id:4, name:'Hearth Zone',     sub:'Molten Metal & Slag',
+    temp:'1450°C – 1550°C', tempVal:1500, depth:'17 m — Hearth (Base)',
+    y:-9.2,
+    desc:'Liquid iron accumulates below the lighter slag layer. Both are tapped periodically — iron from the bottom notch, slag from above.',
+    eq:'Fe(l) + [4.5% C] → Hot Metal\nTap temperature: ~1480°C',
+    hex:'#ffaa00', glow:0xffaa00, part:0xffdd44,
+    badge:'linear-gradient(90deg,#995500,#ffaa00)', pg:'#ff8800', labelCol:'#885500',
+    mechColor:'rgba(255,170,0', mechBg:'rgba(255,170,0,0.06)' },
+];
+
+// ══════════════════════════════════════════
+// 2D MECHANISM ANIMATOR
+// ══════════════════════════════════════════
+const mechCanvas = document.getElementById('mech-canvas');
+const mechCtx = mechCanvas.getContext('2d');
+const mechLabel = document.getElementById('mech-label');
+let mechAnim = null, mechFrame = 0, currentMechId = -1;
+
+function resizeMechCanvas() {
+  mechCanvas.width  = window.innerWidth;
+  mechCanvas.height = window.innerHeight;
+}
+resizeMechCanvas();
+window.addEventListener('resize', resizeMechCanvas);
+
+function stopMech() {
+  if (mechAnim) { cancelAnimationFrame(mechAnim); mechAnim = null; }
+  mechCtx.clearRect(0, 0, mechCanvas.width, mechCanvas.height);
+  mechCanvas.classList.remove('vis');
+  mechLabel.classList.remove('vis');
+  currentMechId = -1;
+}
+
+function startMech(L) {
+  stopMech();
+  currentMechId = L.id;
+  mechFrame = 0;
+  mechCanvas.classList.add('vis');
+  mechLabel.style.color = L.hex;
+  mechLabel.textContent = L.name.toUpperCase() + ' — MECHANISM';
+  mechLabel.classList.add('vis');
+
+  const W = mechCanvas.width, H = mechCanvas.height;
+  const cx = W * 0.38, cy = H * 0.5; // Centre of furnace cross-section (left of panel)
+
+  switch(L.id) {
+    case 0: animCharging(L, cx, cy); break;
+    case 1: animReduction(L, cx, cy); break;
+    case 2: animCohesive(L, cx, cy); break;
+    case 3: animCombustion(L, cx, cy); break;
+    case 4: animHearth(L, cx, cy); break;
+  }
+}
+
+// ─── Helpers ───
+function hexA(hex, a) {
+  const r=parseInt(hex.slice(1,3),16), g=parseInt(hex.slice(3,5),16), b=parseInt(hex.slice(5,7),16);
+  return `rgba(${r},${g},${b},${a})`;
+}
+
+function drawCrossSection(ctx, cx, cy, r, hex, f) {
+  // Draw furnace cross-section outline as backdrop for the mechanism
+  ctx.save();
+  // furnace silhouette
+  ctx.strokeStyle = hexA(hex, 0.18);
+  ctx.lineWidth = 2;
+  ctx.setLineDash([6,4]);
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, r, r*2.6, 0, 0, Math.PI*2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // zone indicator band
+  const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+  grad.addColorStop(0, hexA(hex, 0.12));
+  grad.addColorStop(0.7, hexA(hex, 0.06));
+  grad.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, r*0.95, r*0.6, 0, 0, Math.PI*2);
+  ctx.fill();
+  ctx.restore();
+}
+
+// ─── ZONE 0: Charging — ore/coke layers descending ───
+const chargeParts = Array.from({length:20}, (_,i) => ({
+  x: 0, y: 0, r: 6+Math.random()*8,
+  type: i%3===0 ? 'coke' : i%3===1 ? 'ore' : 'limestone',
+  px: -80+Math.random()*160, py: -120+Math.random()*80, vy: 0.6+Math.random()*0.5
+}));
+
+function animCharging(L, cx, cy) {
+  function draw() {
+    if (currentMechId !== 0) return;
+    mechCtx.clearRect(0, 0, mechCanvas.width, mechCanvas.height);
+    const W=mechCanvas.width, H=mechCanvas.height;
+    const f = mechFrame / 60;
+    const R = Math.min(W,H) * 0.16;
+    drawCrossSection(mechCtx, cx, cy, R, L.hex, f);
+
+    // Falling layers of material
+    chargeParts.forEach((p, i) => {
+      p.py += p.vy * 1.1;
+      if (p.py > R * 0.85) { p.py = -R * 0.9; p.px = -R*0.7+Math.random()*R*1.4; }
+      const wx = cx + p.px, wy = cy + p.py;
+      mechCtx.beginPath();
+      mechCtx.arc(wx, wy, p.r, 0, Math.PI*2);
+      if (p.type==='coke') {
+        mechCtx.fillStyle = `rgba(50,45,40,${0.7+Math.sin(f*2+i)*0.1})`;
+        mechCtx.fill();
+        mechCtx.strokeStyle='rgba(80,70,60,0.5)'; mechCtx.lineWidth=1; mechCtx.stroke();
+      } else if (p.type==='ore') {
+        mechCtx.fillStyle = `rgba(160,80,40,${0.7+Math.cos(f*2+i)*0.1})`;
+        mechCtx.fill();
+        mechCtx.strokeStyle='rgba(200,100,50,0.4)'; mechCtx.lineWidth=1; mechCtx.stroke();
+      } else {
+        mechCtx.fillStyle = `rgba(220,215,200,${0.6+Math.sin(f+i)*0.1})`;
+        mechCtx.fill();
+        mechCtx.strokeStyle='rgba(180,175,160,0.5)'; mechCtx.lineWidth=1; mechCtx.stroke();
+      }
+    });
+
+    // Labels
+    const labels = [['COKE','rgba(50,45,40,0.9)'],['IRON ORE','rgba(160,80,40,0.9)'],['LIMESTONE','rgba(160,150,120,0.9)']];
+    labels.forEach(([txt, col], i) => {
+      mechCtx.font = '700 11px "Share Tech Mono"';
+      mechCtx.fillStyle = col;
+      mechCtx.letterSpacing = '0.15em';
+      mechCtx.fillText(txt, cx + R*0.98 + 10, cy - R*0.35 + i*22);
+    });
+
+    // Downward arrow
+    mechCtx.strokeStyle = hexA(L.hex, 0.4); mechCtx.lineWidth = 2;
+    mechCtx.setLineDash([5,4]);
+    mechCtx.beginPath(); mechCtx.moveTo(cx, cy-R*1.1); mechCtx.lineTo(cx, cy+R*1.0); mechCtx.stroke();
+    mechCtx.setLineDash([]);
+    // arrowhead
+    mechCtx.fillStyle = hexA(L.hex, 0.5);
+    mechCtx.beginPath(); mechCtx.moveTo(cx, cy+R*1.1); mechCtx.lineTo(cx-8, cy+R*0.9); mechCtx.lineTo(cx+8, cy+R*0.9); mechCtx.fill();
+
+    mechCtx.font = '600 10px "Share Tech Mono"';
+    mechCtx.fillStyle = hexA(L.hex, 0.7);
+    mechCtx.fillText('BURDEN DESCENT', cx+12, cy+R*1.1);
+
+    mechFrame++; mechAnim = requestAnimationFrame(draw);
+  }
+  draw();
+}
+
+// ─── ZONE 1: Reduction — CO arrows rising, ore particles changing ───
+const reductionParts = Array.from({length:16}, (_,i) => ({
+  px: -90+Math.random()*180, py: -60+Math.random()*120,
+  stage: Math.floor(Math.random()*3), r: 7+Math.random()*6, vy:-0.3
+}));
+
+function animReduction(L, cx, cy) {
+  const coArrows = Array.from({length:8}, (_,i) => ({
+    px: -80+Math.random()*160, py: 80+Math.random()*40, vy:-(1.2+Math.random()*.8)
+  }));
+  function draw() {
+    if (currentMechId!==1) return;
+    mechCtx.clearRect(0, 0, mechCanvas.width, mechCanvas.height);
+    const W=mechCanvas.width; const R = Math.min(W,mechCanvas.height) * 0.16;
+    drawCrossSection(mechCtx, cx, cy, R, L.hex, mechFrame/60);
+
+    // Ore particles showing colour transition
+    reductionParts.forEach((p, i) => {
+      const wx=cx+p.px, wy=cy+p.py;
+      const prog = ((mechFrame/120 + i*0.15) % 1);
+      // Colour: brown Fe2O3 → dark Fe3O4 → grey FeO
+      let col;
+      if (prog < 0.33) col = `rgba(180,70,30,0.85)`;
+      else if (prog < 0.66) col = `rgba(90,50,35,0.85)`;
+      else col = `rgba(100,105,110,0.85)`;
+      mechCtx.beginPath(); mechCtx.arc(wx, wy, p.r, 0, Math.PI*2);
+      mechCtx.fillStyle=col; mechCtx.fill();
+      mechCtx.strokeStyle='rgba(255,255,255,0.15)'; mechCtx.lineWidth=1; mechCtx.stroke();
+    });
+
+    // CO arrows rising
+    coArrows.forEach((a, i) => {
+      a.py += a.vy;
+      if (a.py < -R) { a.py = R*0.9; a.px = -R*0.8+Math.random()*R*1.6; }
+      const wx=cx+a.px, wy=cy+a.py;
+      mechCtx.strokeStyle=hexA(L.hex, 0.55); mechCtx.lineWidth=1.5;
+      mechCtx.setLineDash([4,3]);
+      mechCtx.beginPath(); mechCtx.moveTo(wx, wy+18); mechCtx.lineTo(wx, wy-18); mechCtx.stroke();
+      mechCtx.setLineDash([]);
+      mechCtx.fillStyle=hexA(L.hex, 0.7);
+      mechCtx.beginPath(); mechCtx.moveTo(wx, wy-24); mechCtx.lineTo(wx-6,wy-12); mechCtx.lineTo(wx+6,wy-12); mechCtx.fill();
+      mechCtx.font='bold 9px "Share Tech Mono"'; mechCtx.fillStyle=hexA(L.hex,0.8);
+      mechCtx.fillText('CO', wx+8, wy);
+    });
+
+    // Stage legend
+    [['Fe₂O₃','rgba(180,70,30,0.9)','brown'],['Fe₃O₄','rgba(90,50,35,0.9)','dark'],['FeO','rgba(100,105,110,0.9)','grey']].forEach(([t,c],i) => {
+      mechCtx.beginPath(); mechCtx.arc(cx+R+18, cy-40+i*28, 8, 0, Math.PI*2);
+      mechCtx.fillStyle=c; mechCtx.fill();
+      mechCtx.font='700 10px "Share Tech Mono"'; mechCtx.fillStyle='rgba(0,0,0,0.6)';
+      mechCtx.fillText(t, cx+R+32, cy-36+i*28);
+    });
+    mechCtx.font='600 9px "Share Tech Mono"'; mechCtx.fillStyle=hexA(L.hex,0.7);
+    mechCtx.fillText('↑ REDUCING GAS', cx+R+12, cy+R*0.85);
+
+    mechFrame++; mechAnim = requestAnimationFrame(draw);
+  }
+  draw();
+}
+
+// ─── ZONE 2: Cohesive — dripping molten iron ───
+const drips = Array.from({length:12}, (_,i) => ({
+  px: -70+Math.random()*140, py: -60+Math.random()*80, vy:0, r:4+Math.random()*5, phase:Math.random()*Math.PI*2
+}));
+const slagDrops = Array.from({length:8}, (_,i)=>({ px:-50+Math.random()*100, py:-30+Math.random()*60, vy:0.8+Math.random()*0.5, r:5+Math.random()*4 }));
+
+function animCohesive(L, cx, cy) {
+  function draw() {
+    if (currentMechId!==2) return;
+    mechCtx.clearRect(0, 0, mechCanvas.width, mechCanvas.height);
+    const R = Math.min(mechCanvas.width,mechCanvas.height)*0.16;
+    drawCrossSection(mechCtx, cx, cy, R, L.hex, mechFrame/60);
+    const t = mechFrame/60;
+
+    // Softening ore blobs
+    for (let i=0;i<8;i++) {
+      const bx=cx-R*0.6+i*R*0.17, by=cy-R*0.3;
+      const squish=1+Math.sin(t*2+i)*0.2;
+      mechCtx.beginPath();
+      mechCtx.ellipse(bx, by, 14*squish, 10/squish, Math.sin(t+i)*0.3, 0, Math.PI*2);
+      mechCtx.fillStyle=`rgba(${180+i*4},${60+i*3},20,0.7)`;
+      mechCtx.fill();
+    }
+
+    // Dripping iron
+    drips.forEach((d, i) => {
+      d.py += 0.9 + Math.sin(t*3+i)*0.3;
+      if (d.py > R*0.9) { d.py = -R*0.5; d.px = -R*0.7+Math.random()*R*1.4; }
+      const wx=cx+d.px, wy=cy+d.py;
+      // teardrop shape
+      mechCtx.beginPath();
+      mechCtx.arc(wx, wy, d.r, 0, Math.PI*2);
+      const grd = mechCtx.createRadialGradient(wx,wy-2,0,wx,wy,d.r);
+      grd.addColorStop(0,'rgba(255,230,120,0.95)');
+      grd.addColorStop(0.5,'rgba(255,140,0,0.9)');
+      grd.addColorStop(1,'rgba(200,60,0,0.7)');
+      mechCtx.fillStyle=grd; mechCtx.fill();
+    });
+
+    // Slag layer at bottom
+    const slY = cy+R*0.7;
+    mechCtx.beginPath();
+    for (let x=cx-R*0.9;x<cx+R*0.9;x+=4) {
+      const waveY = slY + Math.sin(x*0.05+t*2)*5;
+      x===cx-R*0.9+0 ? mechCtx.moveTo(x,waveY) : mechCtx.lineTo(x,waveY);
+    }
+    mechCtx.lineTo(cx+R*0.9, slY+30); mechCtx.lineTo(cx-R*0.9, slY+30); mechCtx.closePath();
+    mechCtx.fillStyle='rgba(160,140,80,0.4)'; mechCtx.fill();
+    mechCtx.font='700 9px "Share Tech Mono"'; mechCtx.fillStyle='rgba(140,120,60,0.8)';
+    mechCtx.fillText('SLAG LAYER', cx-28, slY+18);
+
+    // Iron pool
+    const ironY = slY+32;
+    mechCtx.beginPath();
+    mechCtx.rect(cx-R*0.88, ironY, R*1.76, 30);
+    const ig = mechCtx.createLinearGradient(cx-R*0.88,ironY,cx-R*0.88,ironY+30);
+    ig.addColorStop(0,'rgba(255,160,0,0.65)'); ig.addColorStop(1,'rgba(220,80,0,0.45)');
+    mechCtx.fillStyle=ig; mechCtx.fill();
+    mechCtx.font='700 9px "Share Tech Mono"'; mechCtx.fillStyle='rgba(255,180,20,0.9)';
+    mechCtx.fillText('MOLTEN IRON', cx-30, ironY+20);
+
+    mechCtx.font='600 9px "Share Tech Mono"'; mechCtx.fillStyle=hexA(L.hex,0.7);
+    mechCtx.fillText('↓ DRIPPING IRON', cx+R+10, cy);
+
+    mechFrame++; mechAnim = requestAnimationFrame(draw);
+  }
+  draw();
+}
+
+// ─── ZONE 3: Combustion — raceways, tuyere blast, sparks ───
+const sparks3 = Array.from({length:60}, (_,i) => ({
+  px:0, py:0, vx:(Math.random()-.5)*6, vy:(Math.random()-.5)*6-2, life:0, maxLife:30+Math.random()*30
+}));
+const tuyereAngles = [Math.PI*.1, Math.PI*.9, Math.PI*1.1, Math.PI*1.9];
+
+function animCombustion(L, cx, cy) {
+  function draw() {
+    if (currentMechId!==3) return;
+    mechCtx.clearRect(0, 0, mechCanvas.width, mechCanvas.height);
+    const R = Math.min(mechCanvas.width,mechCanvas.height)*0.17;
+    drawCrossSection(mechCtx, cx, cy, R, L.hex, mechFrame/60);
+    const t = mechFrame/60;
+
+    // Rotating raceways (ellipses spinning around tuyere points)
+    tuyereAngles.forEach((ang, ti) => {
+      const tx = cx + Math.cos(ang)*R*0.75;
+      const ty = cy + Math.sin(ang)*R*0.75;
+      const rot = t * (ti%2===0?1.8:-1.8);
+
+      mechCtx.save();
+      mechCtx.translate(tx, ty);
+      mechCtx.rotate(rot + ang);
+      // Raceway ellipse
+      mechCtx.beginPath();
+      mechCtx.ellipse(0, 0, 22, 14, 0, 0, Math.PI*2);
+      const rg = mechCtx.createRadialGradient(0,0,0,0,0,22);
+      rg.addColorStop(0,'rgba(255,255,200,0.9)');
+      rg.addColorStop(0.4,'rgba(255,150,0,0.7)');
+      rg.addColorStop(1,'rgba(255,30,0,0.2)');
+      mechCtx.fillStyle=rg; mechCtx.fill();
+      mechCtx.restore();
+
+      // Tuyere nozzle
+      mechCtx.save();
+      mechCtx.translate(cx, cy);
+      mechCtx.rotate(ang);
+      mechCtx.fillStyle='rgba(50,55,70,0.9)';
+      mechCtx.fillRect(R*0.68, -5, R*0.25, 10);
+      // Blast air arrow
+      mechCtx.strokeStyle='rgba(180,220,255,0.6)'; mechCtx.lineWidth=2;
+      mechCtx.setLineDash([3,3]);
+      mechCtx.beginPath(); mechCtx.moveTo(R*1.05, 0); mechCtx.lineTo(R*0.72, 0); mechCtx.stroke();
+      mechCtx.setLineDash([]);
+      mechCtx.font='bold 8px "Share Tech Mono"'; mechCtx.fillStyle='rgba(180,220,255,0.75)';
+      mechCtx.fillText('AIR', R*1.08, 3);
+      mechCtx.restore();
+    });
+
+    // Central fire ball
+    const pulse = 0.85 + Math.sin(t*4)*0.15;
+    const fg = mechCtx.createRadialGradient(cx,cy,0,cx,cy,R*0.55*pulse);
+    fg.addColorStop(0,'rgba(255,255,220,0.9)');
+    fg.addColorStop(0.2,'rgba(255,200,50,0.7)');
+    fg.addColorStop(0.5,'rgba(255,80,0,0.45)');
+    fg.addColorStop(1,'rgba(255,0,0,0)');
+    mechCtx.beginPath(); mechCtx.arc(cx, cy, R*0.55*pulse, 0, Math.PI*2);
+    mechCtx.fillStyle=fg; mechCtx.fill();
+
+    // Sparks
+    sparks3.forEach(sp => {
+      sp.life++;
+      if (sp.life > sp.maxLife) {
+        sp.px=0; sp.py=0; sp.vx=(Math.random()-.5)*7; sp.vy=(Math.random()-.5)*7-1;
+        sp.life=0; sp.maxLife=25+Math.random()*35;
+      }
+      sp.px+=sp.vx; sp.py+=sp.vy; sp.vy+=0.08;
+      const prog=1-(sp.life/sp.maxLife);
+      mechCtx.beginPath(); mechCtx.arc(cx+sp.px, cy+sp.py, 2+prog*2, 0, Math.PI*2);
+      mechCtx.fillStyle=`rgba(255,${180+Math.random()*75},0,${prog*0.95})`; mechCtx.fill();
+    });
+
+    // CO gas arrows (upward from combustion)
+    for (let i=0;i<5;i++) {
+      const ox=(i-2)*R*0.28, oy=-R*0.5+Math.sin(t*2+i)*8;
+      mechCtx.strokeStyle=hexA(L.hex,0.45); mechCtx.lineWidth=1.5;
+      mechCtx.setLineDash([4,3]);
+      mechCtx.beginPath(); mechCtx.moveTo(cx+ox, cy+oy+25); mechCtx.lineTo(cx+ox, cy+oy-30); mechCtx.stroke();
+      mechCtx.setLineDash([]);
+      mechCtx.fillStyle=hexA(L.hex,0.65);
+      mechCtx.beginPath(); mechCtx.moveTo(cx+ox, cy+oy-38); mechCtx.lineTo(cx+ox-5,cy+oy-24); mechCtx.lineTo(cx+ox+5,cy+oy-24); mechCtx.fill();
+      mechCtx.font='bold 8px "Share Tech Mono"'; mechCtx.fillStyle=hexA(L.hex,0.8);
+      mechCtx.fillText('CO', cx+ox+6, cy+oy-28);
+    }
+
+    mechCtx.font='700 10px "Share Tech Mono"'; mechCtx.fillStyle='rgba(255,120,0,0.8)';
+    mechCtx.fillText('RACEWAYS', cx+R+12, cy-15);
+    mechCtx.font='600 9px "Share Tech Mono"'; mechCtx.fillStyle='rgba(180,220,255,0.75)';
+    mechCtx.fillText('BLAST AIR →', cx+R+12, cy+8);
+
+    mechFrame++; mechAnim = requestAnimationFrame(draw);
+  }
+  draw();
+}
+
+// ─── ZONE 4: Hearth — two layers, tap hole flow ───
+function animHearth(L, cx, cy) {
+  const ironWave = [];
+  const slagWave = [];
+  for (let i=0;i<30;i++) { ironWave.push(Math.random()*Math.PI*2); slagWave.push(Math.random()*Math.PI*2); }
+
+  function draw() {
+    if (currentMechId!==4) return;
+    mechCtx.clearRect(0, 0, mechCanvas.width, mechCanvas.height);
+    const R = Math.min(mechCanvas.width,mechCanvas.height)*0.17;
+    drawCrossSection(mechCtx, cx, cy, R, L.hex, mechFrame/60);
+    const t = mechFrame/60;
+    const W2 = R*0.88;
+
+    // Walls of hearth (refractory brick pattern)
+    mechCtx.strokeStyle='rgba(160,130,90,0.3)'; mechCtx.lineWidth=1;
+    for (let i=0;i<6;i++) {
+      mechCtx.beginPath(); mechCtx.moveTo(cx-W2-15, cy-R*0.6+i*22); mechCtx.lineTo(cx+W2+15, cy-R*0.6+i*22); mechCtx.stroke();
+    }
+
+    // Slag layer (top, yellowish)
+    const slagTop = cy - R*0.1;
+    const slagH = R*0.28;
+    mechCtx.beginPath();
+    for (let xi=0;xi<30;xi++) {
+      const x=cx-W2+xi*(W2*2/29), y=slagTop+Math.sin(t*1.8+slagWave[xi])*5;
+      xi===0 ? mechCtx.moveTo(x,y) : mechCtx.lineTo(x,y);
+    }
+    mechCtx.lineTo(cx+W2, slagTop+slagH); mechCtx.lineTo(cx-W2, slagTop+slagH); mechCtx.closePath();
+    const sg=mechCtx.createLinearGradient(cx,slagTop,cx,slagTop+slagH);
+    sg.addColorStop(0,'rgba(210,195,100,0.75)'); sg.addColorStop(1,'rgba(170,145,60,0.55)');
+    mechCtx.fillStyle=sg; mechCtx.fill();
+
+    // Iron layer (bottom, glowing orange-red)
+    const ironTop = slagTop + slagH;
+    const ironH = R*0.45;
+    mechCtx.beginPath();
+    for (let xi=0;xi<30;xi++) {
+      const x=cx-W2+xi*(W2*2/29), y=ironTop+Math.sin(t*2.2+ironWave[xi]+1)*6;
+      xi===0 ? mechCtx.moveTo(x,y) : mechCtx.lineTo(x,y);
+    }
+    mechCtx.lineTo(cx+W2, ironTop+ironH); mechCtx.lineTo(cx-W2, ironTop+ironH); mechCtx.closePath();
+    const ig2=mechCtx.createLinearGradient(cx,ironTop,cx,ironTop+ironH);
+    ig2.addColorStop(0,'rgba(255,190,0,0.85)');
+    ig2.addColorStop(0.4,'rgba(255,120,0,0.75)');
+    ig2.addColorStop(1,'rgba(200,50,0,0.55)');
+    mechCtx.fillStyle=ig2; mechCtx.fill();
+
+    // Glow on iron surface
+    const gIron=mechCtx.createRadialGradient(cx,ironTop,0,cx,ironTop,W2);
+    gIron.addColorStop(0,'rgba(255,220,100,0.35)'); gIron.addColorStop(1,'rgba(255,100,0,0)');
+    mechCtx.beginPath(); mechCtx.ellipse(cx,ironTop,W2*0.9,12,0,0,Math.PI*2);
+    mechCtx.fillStyle=gIron; mechCtx.fill();
+
+    // Tap hole on right side
+    const tapX=cx+W2+15, tapY=ironTop+ironH*0.4;
+    mechCtx.beginPath(); mechCtx.rect(tapX, tapY-6, 22, 12);
+    mechCtx.fillStyle='rgba(60,50,40,0.9)'; mechCtx.fill();
+
+    // Molten iron stream from tap hole
+    const streamLen = 60;
+    for (let pi=0;pi<15;pi++) {
+      const prog=((t*0.8+pi/15)%1);
+      const sx=tapX+22+prog*streamLen;
+      const sy=tapY+prog*prog*40;
+      const a=1-prog;
+      mechCtx.beginPath(); mechCtx.arc(sx, sy, 3.5+Math.random(), 0, Math.PI*2);
+      const pg3=mechCtx.createRadialGradient(sx,sy,0,sx,sy,4);
+      pg3.addColorStop(0,`rgba(255,230,100,${a*0.95})`);
+      pg3.addColorStop(1,`rgba(255,80,0,${a*0.5})`);
+      mechCtx.fillStyle=pg3; mechCtx.fill();
+    }
+
+    // Labels
+    mechCtx.font='700 10px "Share Tech Mono"'; mechCtx.fillStyle='rgba(200,180,80,0.9)';
+    mechCtx.fillText('SLAG', cx-W2-50, slagTop+slagH*0.5+4);
+    mechCtx.font='700 10px "Share Tech Mono"'; mechCtx.fillStyle='rgba(255,160,20,0.95)';
+    mechCtx.fillText('HOT METAL', cx-W2-60, ironTop+ironH*0.55+4);
+    mechCtx.font='600 9px "Share Tech Mono"'; mechCtx.fillStyle='rgba(255,140,0,0.8)';
+    mechCtx.fillText('TAP HOLE →', tapX-5, tapY+30);
+
+    // Temperature label
+    const tempPulse=0.7+Math.sin(t*3)*0.3;
+    mechCtx.font=`700 13px "Share Tech Mono"`;
+    mechCtx.fillStyle=`rgba(255,${Math.floor(120+tempPulse*80)},0,0.9)`;
+    mechCtx.fillText('~1480°C', cx-22, ironTop+ironH*0.35);
+
+    mechFrame++; mechAnim = requestAnimationFrame(draw);
+  }
+  draw();
+}
+
+// ══════════════════════════════════════════
+// THREE.JS SETUP
+// ══════════════════════════════════════════
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias:true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.setClearColor(0xf0ede8, 1);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xf0ede8);
+scene.fog = new THREE.Fog(0xf0ede8, 55, 100);
+
+const camera = new THREE.PerspectiveCamera(50, innerWidth/innerHeight, 0.1, 300);
+camera.position.set(14, 5, 26);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.minDistance = 5;
+controls.maxDistance = 55;
+controls.target.set(0, 0, 0);
+controls.update();
+
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// ══════════════════════════════════════════
+// LIGHTING
+// ══════════════════════════════════════════
+scene.add(new THREE.AmbientLight(0xffffff, 2.8));
+const key = new THREE.DirectionalLight(0xffffff, 3.2);
+key.position.set(12, 20, 14); key.castShadow = true;
+key.shadow.mapSize.set(1024,1024); scene.add(key);
+const fill = new THREE.DirectionalLight(0xddeeff, 1.8);
+fill.position.set(-14, 8, 10); scene.add(fill);
+const rim = new THREE.DirectionalLight(0xffffff, 1.0);
+rim.position.set(-5, 5, -18); scene.add(rim);
+const heatLight = new THREE.PointLight(0xff6600, 6, 22, 1.5);
+heatLight.position.set(0, -8, 0); scene.add(heatLight);
+
+// ══════════════════════════════════════════
+// GROUND + GRID
+// ══════════════════════════════════════════
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(100, 100),
+  new THREE.MeshStandardMaterial({ color:0xe8e4de, roughness:.9, metalness:0 })
+);
+ground.rotation.x = -Math.PI/2; ground.position.y = -14; ground.receiveShadow = true;
+scene.add(ground);
+const grid = new THREE.GridHelper(80, 40, 0xcccccc, 0xdddddd);
+grid.position.y = -13.95; scene.add(grid);
+
+// ══════════════════════════════════════════
+// FURNACE — dark charcoal shell with cutaway
+// ══════════════════════════════════════════
+const fH = 22, fR = 2.8;
+const shellMat = new THREE.MeshStandardMaterial({ color:0x2a2c35, roughness:.35, metalness:.9 });
+const capMat   = new THREE.MeshStandardMaterial({ color:0x222430, roughness:.45, metalness:.88 });
+
+// Back 3/4 shell (open front = cutaway)
+scene.add(new THREE.Mesh(
+  new THREE.CylinderGeometry(fR+.18, fR+.28, fH, 48, 1, true, Math.PI*.28, Math.PI*1.44),
+  shellMat
+));
+// Thin front edge strips
+scene.add(new THREE.Mesh(
+  new THREE.CylinderGeometry(fR+.18, fR+.28, fH, 12, 1, true, Math.PI*1.72, Math.PI*.56),
+  shellMat
+));
+
+// Refractory inner wall (warm sandstone, BackSide so visible through opening)
+const refMat = new THREE.MeshStandardMaterial({
+  color:0xc8a87a, emissive:0x442200, emissiveIntensity:.15,
+  roughness:.9, metalness:0, side:THREE.BackSide,
+  transparent:true, opacity:.7
+});
+scene.add(new THREE.Mesh(new THREE.CylinderGeometry(fR-.06, fR+.08, fH, 64, 1, true), refMat));
+
+// Top cone + throat
+const topCap = new THREE.Mesh(new THREE.CylinderGeometry(1.5, fR+.18, 2.8, 32), capMat);
+topCap.position.y = fH/2+1.3; topCap.castShadow=true; scene.add(topCap);
+const throat = new THREE.Mesh(new THREE.TorusGeometry(1.52,.22,10,48), new THREE.MeshStandardMaterial({color:0x333546,roughness:.4,metalness:.95}));
+throat.position.y = fH/2+2.6; throat.rotation.x=Math.PI/2; scene.add(throat);
+
+// Stiffener rings
+[fH*.35, 0, -fH*.25, -fH*.42].forEach(y => {
+  const r=new THREE.Mesh(new THREE.TorusGeometry(fR+.32,.14,8,64), new THREE.MeshStandardMaterial({color:0x3a3c50,roughness:.45,metalness:.95}));
+  r.position.y=y; r.rotation.x=Math.PI/2; scene.add(r);
+});
+
+// Ribs
+for (let i=0;i<16;i++) {
+  const a=(i/16)*Math.PI*2;
+  const rib=new THREE.Mesh(new THREE.BoxGeometry(.1,fH,.1), new THREE.MeshStandardMaterial({color:0x282a38,roughness:.6,metalness:.95}));
+  rib.position.set(Math.cos(a)*(fR+.3),0,Math.sin(a)*(fR+.3)); scene.add(rib);
+}
+
+// Bustle pipe
+const bustle=new THREE.Mesh(new THREE.TorusGeometry(fR+1.1,.22,12,64), new THREE.MeshStandardMaterial({color:0x333546,roughness:.45,metalness:.9}));
+bustle.position.y=-4.5; bustle.rotation.x=Math.PI/2; scene.add(bustle);
+
+// Tuyere pipes
+for (let i=0;i<10;i++) {
+  const a=(i/10)*Math.PI*2, g=new THREE.Group();
+  const pipe=new THREE.Mesh(new THREE.CylinderGeometry(.09,.11,1.3,12),new THREE.MeshStandardMaterial({color:0x333546,roughness:.4,metalness:.9}));
+  pipe.rotation.z=Math.PI/2; g.add(pipe);
+  const tip=new THREE.Mesh(new THREE.SphereGeometry(.14,12,12),new THREE.MeshStandardMaterial({color:0xff4400,emissive:0xff3300,emissiveIntensity:3,roughness:.3}));
+  tip.position.x=-.68; g.add(tip);
+  const tl=new THREE.PointLight(0xff4400,2,4,2); tl.position.x=-1; g.add(tl);
+  g.position.set(Math.cos(a)*(fR+.5),-4.5,Math.sin(a)*(fR+.5)); g.rotation.y=a; scene.add(g);
+}
+
+// Tap hole
+const tapHole=new THREE.Mesh(new THREE.CylinderGeometry(.13,.15,1.6,10),new THREE.MeshStandardMaterial({color:0x553311,emissive:0xff6600,emissiveIntensity:3,roughness:.6}));
+tapHole.rotation.z=Math.PI/2; tapHole.position.set(fR+.55,-10.2,0); scene.add(tapHole);
+const tapL2=new THREE.PointLight(0xff6600,6,10,2); tapL2.position.set(fR+2,-10.2,0); scene.add(tapL2);
+
+// Downcomer pipe
+const downPipe=new THREE.Mesh(new THREE.CylinderGeometry(.3,.3,6,12),capMat);
+downPipe.rotation.z=Math.PI/2.4; downPipe.position.set(fR+2.3,fH/2-1,1.2); scene.add(downPipe);
+
+// Legs + slab
+for (let i=0;i<4;i++) {
+  const a=(i/4)*Math.PI*2+Math.PI/4;
+  const leg=new THREE.Mesh(new THREE.BoxGeometry(.36,4,.36),capMat);
+  leg.position.set(Math.cos(a)*4.5,-12.4,Math.sin(a)*4.5); leg.castShadow=true; scene.add(leg);
+}
+const slab=new THREE.Mesh(new THREE.CylinderGeometry(5.4,6.4,1.4,32),new THREE.MeshStandardMaterial({color:0x222330,roughness:.85,metalness:.2}));
+slab.position.y=-13.1; slab.receiveShadow=true; scene.add(slab);
+
+// ══════════════════════════════════════════
+// ZONE DISCS + LIGHTS + HIT TARGETS
+// ══════════════════════════════════════════
+const zoneMeshes=[], zoneRings=[], zoneLights=[], zoneHits=[];
+
+LAYERS.forEach(L => {
+  const disc=new THREE.Mesh(
+    new THREE.CylinderGeometry(fR-.12,fR-.12,2.0,64,1,true),
+    new THREE.MeshStandardMaterial({
+      color:L.glow, emissive:new THREE.Color(L.glow),
+      emissiveIntensity:L.id===3?6:L.id===2?4.5:3,
+      roughness:.1, metalness:.1, transparent:true, opacity:.7, side:THREE.DoubleSide
+    })
+  );
+  disc.position.y=L.y; scene.add(disc); zoneMeshes.push(disc);
+
+  const fill2=new THREE.Mesh(new THREE.CircleGeometry(fR-.14,64),new THREE.MeshStandardMaterial({
+    color:L.glow, emissive:new THREE.Color(L.glow),
+    emissiveIntensity:L.id===3?5:3.5, transparent:true,
+    opacity:L.id===4?.5:L.id===3?.4:.28
+  }));
+  fill2.rotation.x=-Math.PI/2; fill2.position.y=L.y; scene.add(fill2);
+
+  const ring=new THREE.Mesh(new THREE.TorusGeometry(fR-.15,.08+L.id*.012,12,64),
+    new THREE.MeshBasicMaterial({color:L.glow,transparent:true,opacity:.85,
+      blending:THREE.AdditiveBlending,depthWrite:false}));
+  ring.position.y=L.y; ring.rotation.x=Math.PI/2; scene.add(ring); zoneRings.push(ring);
+
+  const seam=new THREE.Mesh(new THREE.TorusGeometry(fR+.22,.04,6,64),
+    new THREE.MeshBasicMaterial({color:L.glow,transparent:true,opacity:.5,
+      blending:THREE.AdditiveBlending,depthWrite:false}));
+  seam.position.y=L.y+1.05; seam.rotation.x=Math.PI/2; scene.add(seam);
+
+  const pl=new THREE.PointLight(L.glow,L.id===3?10:6,9,2);
+  pl.position.set(0,L.y,0); scene.add(pl); zoneLights.push(pl);
+
+  const hit=new THREE.Mesh(new THREE.SphereGeometry(1.3,12,12),
+    new THREE.MeshBasicMaterial({transparent:true,opacity:0,depthWrite:false}));
+  hit.position.set(0,L.y,0); hit.userData.layer=L; scene.add(hit); zoneHits.push(hit);
+});
+
+// ══════════════════════════════════════════
+// PARTICLES
+// ══════════════════════════════════════════
+function makePS(L){
+  const count=L.id===3?160:L.id===4?120:70;
+  const pos=new Float32Array(count*3), vel=[], life=new Float32Array(count), maxL=new Float32Array(count);
+  const pType=L.id===0?'dust':L.id===1?'gas':L.id===2?'drip':L.id===3?'sparks':'molten';
+  for (let i=0;i<count;i++){
+    const a=Math.random()*Math.PI*2,r=Math.random()*(fR-.3);
+    pos[i*3]=Math.cos(a)*r; pos[i*3+1]=(Math.random()-.5)*2.0; pos[i*3+2]=Math.sin(a)*r;
+    const vy=pType==='molten'?(Math.random()-.5)*.01:pType==='sparks'?Math.random()*.1+.025:pType==='drip'?-(Math.random()*.045+.01):Math.random()*.045+.006;
+    vel.push(new THREE.Vector3((Math.random()-.5)*.022,vy,(Math.random()-.5)*.022));
+    life[i]=Math.random(); maxL[i]=Math.random()*.9+.4;
+  }
+  const geo=new THREE.BufferGeometry(); geo.setAttribute('position',new THREE.BufferAttribute(pos,3));
+  const pts=new THREE.Points(geo,new THREE.PointsMaterial({color:L.part,size:L.id===3?.1:.065,transparent:true,opacity:1.0,blending:THREE.AdditiveBlending,depthWrite:false,sizeAttenuation:true}));
+  pts.position.set(0,L.y,0); scene.add(pts);
+  return {pts,vel,life,maxL,count,pType,pa:geo.attributes.position};
+}
+const pSys=LAYERS.map(makePS);
+
+function tickPS(s,dt){
+  const a=s.pa.array, sp=s.pType==='sparks'?2.2:.85;
+  for (let i=0;i<s.count;i++){
+    s.life[i]+=dt*sp;
+    if(s.life[i]>s.maxL[i]){
+      s.life[i]=0;
+      const ang=Math.random()*Math.PI*2,r=Math.random()*(fR-.32);
+      a[i*3]=Math.cos(ang)*r; a[i*3+1]=(Math.random()-.5)*2.0; a[i*3+2]=Math.sin(ang)*r;
+      const vy=s.pType==='molten'?(Math.random()-.5)*.01:s.pType==='sparks'?Math.random()*.1+.025:s.pType==='drip'?-(Math.random()*.045+.01):Math.random()*.045+.006;
+      s.vel[i].set((Math.random()-.5)*.025,vy,(Math.random()-.5)*.025);
+    }
+    if(s.pType==='sparks'){s.vel[i].x+=(Math.random()-.5)*.006;s.vel[i].z+=(Math.random()-.5)*.006;s.vel[i].y-=.001;}
+    const nx=a[i*3]+s.vel[i].x,nz=a[i*3+2]+s.vel[i].z;
+    if(Math.sqrt(nx*nx+nz*nz)<fR-.13){a[i*3]=nx;a[i*3+2]=nz;}
+    a[i*3+1]+=s.vel[i].y;
+  }
+  s.pa.needsUpdate=true;
+}
+
+// Rising gas + molten stream
+const gC=110,gP=new Float32Array(gC*3),gV=[];
+for(let i=0;i<gC;i++){const a=Math.random()*Math.PI*2,r=Math.random()*(fR-.35);gP[i*3]=Math.cos(a)*r;gP[i*3+1]=(Math.random()-.5)*fH;gP[i*3+2]=Math.sin(a)*r;gV.push(Math.random()*.06+.03);}
+const gGeo=new THREE.BufferGeometry();gGeo.setAttribute('position',new THREE.BufferAttribute(gP,3));
+scene.add(new THREE.Points(gGeo,new THREE.PointsMaterial({color:0xff8833,size:.06,transparent:true,opacity:.65,blending:THREE.AdditiveBlending,depthWrite:false,sizeAttenuation:true})));
+function tickGas(dt){const a=gGeo.attributes.position.array;for(let i=0;i<gC;i++){a[i*3+1]+=gV[i]*dt*20;if(a[i*3+1]>fH/2){a[i*3+1]=-fH/2;const ang=Math.random()*Math.PI*2,r=Math.random()*(fR-.35);a[i*3]=Math.cos(ang)*r;a[i*3+2]=Math.sin(ang)*r;}}gGeo.attributes.position.needsUpdate=true;}
+
+const sC=60,sP2=new Float32Array(sC*3),sV2=[];
+for(let i=0;i<sC;i++){sP2[i*3]=fR+.9+Math.random()*1.4;sP2[i*3+1]=-10+(Math.random()-.5)*.35;sP2[i*3+2]=(Math.random()-.5)*.45;sV2.push({vx:Math.random()*.045+.02,vy:-(Math.random()*.035+.012)});}
+const sGeo2=new THREE.BufferGeometry();sGeo2.setAttribute('position',new THREE.BufferAttribute(sP2,3));
+scene.add(new THREE.Points(sGeo2,new THREE.PointsMaterial({color:0xffaa00,size:.09,transparent:true,opacity:.95,blending:THREE.AdditiveBlending,depthWrite:false,sizeAttenuation:true})));
+function tickStream(dt){const a=sGeo2.attributes.position.array;for(let i=0;i<sC;i++){a[i*3]+=sV2[i].vx*dt*20;a[i*3+1]+=sV2[i].vy*dt*20;if(a[i*3]>fR+4||a[i*3+1]<-13.5){a[i*3]=fR+.78;a[i*3+1]=-10.1+(Math.random()-.5)*.2;a[i*3+2]=(Math.random()-.5)*.4;}}sGeo2.attributes.position.needsUpdate=true;}
+
+// ══════════════════════════════════════════
+// HUD BUILD
+// ══════════════════════════════════════════
+const depthBar=document.getElementById('depth-bar');
+const navDiv=document.getElementById('nav');
+LAYERS.forEach((L,i)=>{
+  const pip=document.createElement('div');pip.className='dpip';pip.dataset.id=i;pip.dataset.lbl=`L${i+1}`;
+  pip.style.setProperty('--pc',L.hex);depthBar.appendChild(pip);
+  if(i<LAYERS.length-1){const ln=document.createElement('div');ln.className='dline';depthBar.appendChild(ln);}
+  const pill=document.createElement('div');pill.className='npill';pill.dataset.id=i;pill.textContent=L.name;
+  pill.style.setProperty('--pg',L.hex);navDiv.appendChild(pill);
+});
+
+const lblEls=LAYERS.map(L=>{
+  const el=document.createElement('div');el.className='llbl';el.textContent=L.name.toUpperCase();el.style.color=L.labelCol;
+  document.getElementById('hud').appendChild(el);return el;
+});
+const _v=new THREE.Vector3();
+function updateLabels(){
+  LAYERS.forEach((L,i)=>{
+    _v.set(fR+1.1,L.y,0).project(camera);
+    const x=(_v.x*.5+.5)*innerWidth,y=(-_v.y*.5+.5)*innerHeight;
+    if(_v.z>0&&_v.z<1){lblEls[i].style.left=x+'px';lblEls[i].style.top=y+'px';lblEls[i].style.display='block';}
+    else lblEls[i].style.display='none';
+  });
+}
+
+// ══════════════════════════════════════════
+// STATE + CAMERA
+// ══════════════════════════════════════════
+let active=null;
+const camDest=new THREE.Vector3(14,5,26);
+const camLook=new THREE.Vector3(0,0,0);
+const curLook=new THREE.Vector3(0,0,0);
+
+function selectLayer(L){
+  active=L;
+  camDest.set(fR*1.6,L.y+.5,fR*1.6);
+  camLook.set(0,L.y,0);
+  controls.enabled=false;
+  document.getElementById('panel').classList.add('vis');
+  document.getElementById('reset').style.display='block';
+  document.getElementById('gauge').style.display='none';
+  document.getElementById('hint').style.display='none';
+  const $=id=>document.getElementById(id);
+  $('p-badge').style.background=L.badge; $('p-badge').textContent='⬡ '+L.temp;
+  $('p-name').textContent=L.name; $('p-name').style.color=L.hex;
+  $('p-sub').textContent=L.sub;
+  $('p-desc').textContent=L.desc;
+  $('p-eq').textContent=L.eq; $('p-eq').style.borderLeftColor=L.hex;
+  $('p-depth').textContent='⬇ Depth: '+L.depth;
+  $('panel').style.borderColor=L.hex+'55';
+  const pct=Math.max(5,((L.tempVal-200)/1800*100)).toFixed(0);
+  $('gbar').style.width=pct+'%'; $('gval').textContent=L.temp;
+  document.querySelectorAll('.dpip').forEach(p=>p.classList.toggle('active',parseInt(p.dataset.id)===L.id));
+  document.querySelectorAll('.npill').forEach(p=>{
+    const match=parseInt(p.dataset.id)===L.id;
+    p.classList.toggle('active',match);
+    p.style.background=match?L.hex:''; p.style.borderColor=match?'transparent':'';
+  });
+  zoneLights.forEach((pl,i)=>{pl.intensity=i===L.id?(L.id===3?22:15):(LAYERS[i].id===3?8:5);pl.distance=i===L.id?14:7;});
+  // Start mechanism animation
+  startMech(L);
+}
+
+function deselect(){
+  active=null;
+  camDest.set(14,5,26);camLook.set(0,0,0);
+  controls.enabled=true;
+  stopMech();
+  document.getElementById('panel').classList.remove('vis');
+  document.getElementById('reset').style.display='none';
+  document.getElementById('gauge').style.display='flex';
+  document.getElementById('hint').style.display='block';
+  document.getElementById('gval').textContent='—';
+  document.getElementById('gbar').style.width='0%';
+  document.querySelectorAll('.dpip,.npill').forEach(p=>{p.classList.remove('active');p.style.background='';p.style.borderColor='';});
+  zoneLights.forEach((pl,i)=>{pl.intensity=LAYERS[i].id===3?10:6;pl.distance=8;});
+}
+
+// ══════════════════════════════════════════
+// EVENTS
+// ══════════════════════════════════════════
+const ray=new THREE.Raycaster();const mouse=new THREE.Vector2();
+canvas.addEventListener('click',e=>{
+  mouse.x=(e.clientX/innerWidth)*2-1;mouse.y=-(e.clientY/innerHeight)*2+1;
+  ray.setFromCamera(mouse,camera);
+  const hits=ray.intersectObjects(zoneHits);
+  if(hits.length){const L=hits[0].object.userData.layer;active?.id===L.id?deselect():selectLayer(L);}
+});
+canvas.addEventListener('mousemove',e=>{
+  mouse.x=(e.clientX/innerWidth)*2-1;mouse.y=-(e.clientY/innerHeight)*2+1;
+  ray.setFromCamera(mouse,camera);
+  canvas.style.cursor=ray.intersectObjects(zoneHits).length?'pointer':'default';
+});
+document.getElementById('reset').addEventListener('click',deselect);
+document.querySelectorAll('.dpip,.npill').forEach(el=>{
+  el.addEventListener('click',()=>{const L=LAYERS[parseInt(el.dataset.id)];active?.id===L.id?deselect():selectLayer(L);});
+});
+
+// ══════════════════════════════════════════
+// RENDER LOOP
+// ══════════════════════════════════════════
+const clock=new THREE.Clock();
+(function render(){
+  requestAnimationFrame(render);
+  const dt=Math.min(.05,clock.getDelta()),t=clock.getElapsedTime();
+  if(!controls.enabled){curLook.lerp(camLook,dt*2.6);camera.position.lerp(camDest,dt*2.2);camera.lookAt(curLook);}
+  else controls.update();
+  LAYERS.forEach((L,i)=>{
+    const pulse=Math.sin(t*(0.6+L.id*.3))*.5+.5,isAct=active?.id===L.id;
+    zoneMeshes[i].material.emissiveIntensity=(L.id===3?6:L.id===2?4.5:3)+pulse*(isAct?3.5:1.2);
+    zoneRings[i].material.opacity=.5+pulse*.4+(isAct?.3:0);
+    zoneRings[i].scale.setScalar(1+pulse*.04);
+  });
+  tapL2.intensity=5+Math.sin(t*9)*1.8+Math.sin(t*14)*.9;
+  heatLight.intensity=5+Math.sin(t*1.5)*1.5;
+  pSys.forEach(s=>tickPS(s,dt));tickGas(dt);tickStream(dt);
+  updateLabels();
+  renderer.render(scene,camera);
+})();
+</script>
+</body>
+</html>
